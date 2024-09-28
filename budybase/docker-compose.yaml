@@ -1,7 +1,5 @@
 version: "3"
 
-# optional ports are specified throughout for more advanced use cases.
-
 services:
   app-service:
     restart: unless-stopped
@@ -10,13 +8,13 @@ services:
     environment:
       SELF_HOSTED: 1
       COUCH_DB_URL: http://${COUCH_DB_USER}:${COUCH_DB_PASSWORD}@couchdb-service:5984
-      WORKER_URL: http://worker-service:4003
-      MINIO_URL: http://minio-service:9000
+      WORKER_URL: http://worker-service:4103
+      MINIO_URL: http://minio-service:9100
       MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
       INTERNAL_API_KEY: ${INTERNAL_API_KEY}
       BUDIBASE_ENVIRONMENT: ${BUDIBASE_ENVIRONMENT}
-      PORT: 4002
+      PORT: 4102
       API_ENCRYPTION_KEY: ${API_ENCRYPTION_KEY}
       JWT_SECRET: ${JWT_SECRET}
       LOG_LEVEL: info
@@ -30,8 +28,11 @@ services:
     depends_on:
       - worker-service
       - redis-service
-  #    volumes:
-  #      - /some/path/to/plugins:/plugins
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4102/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
 
   worker-service:
     restart: unless-stopped
@@ -39,14 +40,14 @@ services:
     container_name: bbworker
     environment:
       SELF_HOSTED: 1
-      PORT: 4003
+      PORT: 4103
       CLUSTER_PORT: ${MAIN_PORT}
       API_ENCRYPTION_KEY: ${API_ENCRYPTION_KEY}
       JWT_SECRET: ${JWT_SECRET}
       MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
-      MINIO_URL: http://minio-service:9000
-      APPS_URL: http://app-service:4002
+      MINIO_URL: http://minio-service:9100
+      APPS_URL: http://app-service:4102
       COUCH_DB_USERNAME: ${COUCH_DB_USER}
       COUCH_DB_PASSWORD: ${COUCH_DB_PASSWORD}
       COUCH_DB_URL: http://${COUCH_DB_USER}:${COUCH_DB_PASSWORD}@couchdb-service:5984
@@ -57,6 +58,11 @@ services:
     depends_on:
       - redis-service
       - minio-service
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4103/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
 
   minio-service:
     restart: unless-stopped
@@ -67,9 +73,9 @@ services:
       MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
       MINIO_BROWSER: "off"
-    command: server /data --console-address ":9001"
+    command: server /data --console-address ":9101"
     healthcheck:
-      test: "timeout 5s bash -c ':> /dev/tcp/127.0.0.1/9000' || exit 1"
+      test: "timeout 5s bash -c ':> /dev/tcp/127.0.0.1/9100' || exit 1"
       interval: 30s
       timeout: 20s
       retries: 3
@@ -77,15 +83,15 @@ services:
   proxy-service:
     restart: unless-stopped
     ports:
-      - "${MAIN_PORT}:10000"
+      - "11000:10000"
     container_name: bbproxy
     image: budibase/proxy
     environment:
       - PROXY_RATE_LIMIT_WEBHOOKS_PER_SECOND=10
       - PROXY_RATE_LIMIT_API_PER_SECOND=20
-      - APPS_UPSTREAM_URL=http://app-service:4002
-      - WORKER_UPSTREAM_URL=http://worker-service:4003
-      - MINIO_UPSTREAM_URL=http://minio-service:9000
+      - APPS_UPSTREAM_URL=http://app-service:4102
+      - WORKER_UPSTREAM_URL=http://worker-service:4103
+      - MINIO_UPSTREAM_URL=http://minio-service:9100
       - COUCHDB_UPSTREAM_URL=http://couchdb-service:5984
       - WATCHTOWER_UPSTREAM_URL=http://watchtower-service:8080
       - RESOLVER=127.0.0.11
@@ -94,6 +100,11 @@ services:
       - worker-service
       - app-service
       - couchdb-service
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
 
   couchdb-service:
     restart: unless-stopped
@@ -104,6 +115,11 @@ services:
       - TARGETBUILD=docker-compose
     volumes:
       - couchdb3_data:/opt/couchdb/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5984/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
 
   redis-service:
     restart: unless-stopped
@@ -111,6 +127,11 @@ services:
     command: redis-server --requirepass "${REDIS_PASSWORD}"
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
 
   watchtower-service:
     restart: always
